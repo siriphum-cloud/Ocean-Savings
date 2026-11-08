@@ -1,0 +1,18 @@
+# ===============================================
+#  ธีม "น้ำลึกในมหาสมุทร" ของโปรแกรม (ไฟล์นี้คุมสีหลักของปุ่มและช่องกรอก)
+#  ไม่เกี่ยวกับคณิตศาสตร์ ลบทิ้งได้โดยโปรแกรมยังทำงานได้ แค่สีจะเปลี่ยน
+# ===============================================
+
+[theme]
+base = "dark"
+primaryColor = "#2EE6D6"              # สีเทอร์ควอยซ์ (ปุ่มหลัก / ไฮไลต์)
+backgroundColor = "#021526"           # น้ำลึกสุด
+secondaryBackgroundColor = "#0B3150"  # พื้นช่องกรอกตัวเลข
+textColor = "#E3F6FF"                 # ตัวหนังสือสีฟ้าขาว
+borderColor = "#1F5F86"
+baseRadius = "12px"
+font = "Prompt:https://fonts.googleapis.com/css2?family=Prompt:wght@300;400;500;600;700&display=swap, Leelawadee UI, sans-serif"
+chartCategoricalColors = ["#2EE6D6", "#FFB86B", "#7FB8FF"]
+
+[browser]
+gatherUsageStats = false
