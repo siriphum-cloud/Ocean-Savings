@@ -1,0 +1,102 @@
+/* =====================================================
+   style.css : ตกแต่งหน้าตาธีม "น้ำลึกในมหาสมุทร"
+   (ไฟล์นี้เป็นเรื่องความสวยงามล้วน ๆ ไม่มีคณิตศาสตร์)
+   ===================================================== */
+
+/* ---------- 1) พื้นหลัง: ไล่สีจากผิวน้ำ (บน) ลงไปน้ำลึก (ล่าง) ---------- */
+.stApp {
+  background:
+    radial-gradient(ellipse 80% 45% at 50% -5%, rgba(120, 230, 255, 0.28), transparent 70%),
+    linear-gradient(180deg, #0b5272 0%, #063b5e 22%, #042a46 48%, #021a2f 75%, #010b16 100%);
+  background-attachment: fixed;
+}
+header[data-testid="stHeader"] { background: transparent; }
+
+/* ---------- 2) ฟองอากาศลอยขึ้น ---------- */
+.bubbles { position: fixed; inset: 0; pointer-events: none; z-index: -1; overflow: hidden; }
+.bubble {
+  position: absolute;
+  bottom: -60px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 30% 30%, rgba(255,255,255,0.75), rgba(140,230,255,0.18) 55%, rgba(140,230,255,0.06));
+  border: 1px solid rgba(190, 240, 255, 0.55);
+  box-shadow: 0 0 10px rgba(140, 230, 255, 0.25);
+  animation-name: rise;
+  animation-timing-function: ease-in;
+  animation-iteration-count: infinite;
+}
+@keyframes rise {
+  0%   { transform: translate(0, 0);        opacity: 0; }
+  10%  { opacity: 0.9; }
+  50%  { transform: translate(18px, -55vh); }
+  100% { transform: translate(-12px, -112vh); opacity: 0; }
+}
+
+/* ให้เนื้อหาอยู่เหนือฟองอากาศ */
+.block-container { position: relative; z-index: 1; max-width: 1080px; padding-top: 2.2rem; }
+
+/* ---------- 3) หัวโปรแกรม ---------- */
+.hero { text-align: center; margin-bottom: 0.4rem; }
+.hero .whale { font-size: 3rem; line-height: 1; filter: drop-shadow(0 0 14px rgba(46,230,214,0.45)); }
+.hero h1 {
+  font-size: 2.5rem; font-weight: 700; margin: 0.2rem 0 0.1rem 0; padding: 0;
+  background: linear-gradient(90deg, #9ff6ff, #2ee6d6 45%, #7fb8ff);
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+}
+.hero p { color: #a9d8ec; margin: 0; font-size: 1.02rem; }
+.rate-badge {
+  display: inline-block; margin-top: 0.7rem; padding: 0.35rem 1rem; border-radius: 999px;
+  background: rgba(46, 230, 214, 0.12); border: 1px solid rgba(46, 230, 214, 0.45);
+  color: #b9fff6; font-size: 0.95rem;
+}
+
+/* ---------- 4) การ์ดแสดงผลลัพธ์ ---------- */
+.card-row { display: flex; gap: 14px; flex-wrap: wrap; margin: 0.4rem 0 0.8rem 0; }
+.ocean-card {
+  flex: 1 1 220px;
+  background: linear-gradient(160deg, rgba(16, 78, 112, 0.55), rgba(5, 33, 56, 0.65));
+  border: 1px solid rgba(110, 220, 255, 0.28);
+  border-radius: 18px;
+  padding: 16px 20px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35), inset 0 0 24px rgba(72, 202, 228, 0.07);
+}
+.ocean-card .label { color: #9fcde2; font-size: 0.92rem; }
+.ocean-card .value { font-size: 1.75rem; font-weight: 700; color: #e9fbff; margin-top: 2px; }
+.ocean-card .sub   { color: #7fb0c8; font-size: 0.82rem; margin-top: 2px; }
+.ocean-card.main   { border-color: rgba(46, 230, 214, 0.75); }
+.ocean-card.main .value { color: #5ff5e6; text-shadow: 0 0 14px rgba(46, 230, 214, 0.55); }
+.ocean-card.gold .value { color: #ffcf8a; }
+
+/* กล่องข้อความแจ้ง */
+.note {
+  border-left: 4px solid #2ee6d6; background: rgba(46, 230, 214, 0.08);
+  padding: 10px 14px; border-radius: 8px; color: #cdeef7; margin: 0.4rem 0;
+}
+.note.ok { border-left-color: #7be495; background: rgba(123, 228, 149, 0.10); }
+
+/* หัวข้อย่อยแบบ "คำถามที่ 1 ..." */
+.step-title { color: #8fe9ff; font-weight: 600; font-size: 1.05rem; margin: 0.2rem 0 0.1rem 0; }
+
+/* ---------- 5) ปุ่ม ---------- */
+.stButton > button, .stFormSubmitButton > button {
+  border-radius: 14px; font-weight: 600; min-height: 3rem;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+.stButton > button:hover { transform: translateY(-2px); box-shadow: 0 6px 22px rgba(46, 230, 214, 0.35); }
+.stButton > button[kind="primary"] {
+  background: linear-gradient(90deg, #12b5c9, #2ee6d6); color: #022033; border: none;
+}
+
+/* แท็บ */
+.stTabs [data-baseweb="tab"] { font-size: 1.05rem; }
+
+/* สูตรคณิต (LaTeX) ให้ตัวใหญ่ขึ้นเล็กน้อย และเลื่อนซ้าย-ขวาได้ถ้าจอแคบ */
+.katex { font-size: 1.15em; }
+.katex-display { overflow-x: auto; overflow-y: hidden; padding: 4px 0; }
+
+/* ---------- 6) จอเล็ก (มือถือ / iPad แนวตั้ง) ---------- */
+@media (max-width: 640px) {
+  .katex { font-size: 0.92em; }
+  .hero h1 { font-size: 2rem; }
+  .ocean-card .value { font-size: 1.5rem; }
+}
