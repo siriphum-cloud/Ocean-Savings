@@ -1,0 +1,87 @@
+/* =====================================================
+   magma.css : ธีม "แมกมา / ลาวา" สำหรับหน้าเงินกู้
+   โหลดทับ style.css เฉพาะตอนกดปุ่ม "เงินกู้" เท่านั้น
+   (หัวเว็บ .hero ไม่ถูกแตะ จึงยังเป็นแบบเดิม)
+   ===================================================== */
+
+/* ---------- 1) พื้นหลัง: หินภูเขาไฟดำ (บน) ลงไปลาวาเรืองแสง (ล่าง) ---------- */
+.stApp {
+  background:
+    radial-gradient(ellipse 90% 40% at 50% 110%, rgba(255, 110, 30, 0.45), transparent 70%),
+    radial-gradient(ellipse 60% 30% at 15% 100%, rgba(255, 60, 20, 0.30), transparent 70%),
+    linear-gradient(180deg, #1a0605 0%, #2a0907 25%, #3d0c08 50%, #5a120a 75%, #7a1d0b 100%);
+  background-attachment: fixed;
+}
+
+/* ---------- 2) ประกายไฟลอยขึ้น (แทนฟองอากาศ) ---------- */
+.bubble.ember {
+  background: radial-gradient(circle at 40% 40%, #fff3c4, #ffb347 40%, rgba(255, 77, 46, 0.25) 75%);
+  border: none;
+  box-shadow: 0 0 12px rgba(255, 140, 50, 0.85), 0 0 26px rgba(255, 77, 46, 0.45);
+}
+
+/* ---------- 3) การ์ดแสดงผลลัพธ์ ---------- */
+.ocean-card {
+  background: linear-gradient(160deg, rgba(110, 28, 14, 0.60), rgba(40, 8, 6, 0.72));
+  border: 1px solid rgba(255, 120, 70, 0.30);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45), inset 0 0 24px rgba(255, 90, 40, 0.08);
+}
+.ocean-card .label { color: #ffbfa0; }
+.ocean-card .value { color: #fff1e8; }
+.ocean-card .sub   { color: #d69a80; }
+.ocean-card.main   { border-color: rgba(255, 110, 50, 0.85); }
+.ocean-card.main .value { color: #ff8a4c; text-shadow: 0 0 16px rgba(255, 90, 30, 0.70); }
+.ocean-card.gold .value { color: #ffd36b; }
+
+/* กล่องข้อความแจ้ง */
+.note { border-left-color: #ff6a3d; background: rgba(255, 106, 61, 0.10); color: #ffe2d4; }
+.note.ok { border-left-color: #ffc46b; background: rgba(255, 196, 107, 0.12); }
+
+.step-title { color: #ffb088; }
+
+/* ตัวหนังสือในเนื้อหา (หัวข้อ สูตร คำอธิบาย ป้ายช่องกรอก) ให้สว่างอ่านง่ายบนพื้นแดง
+   (หัวเว็บใช้ h1 จึงไม่โดนกฎเหล่านี้) */
+.stMarkdown h3, .stMarkdown h4 { color: #ffe0cc; }
+.katex { color: #fff1e8; }
+[data-testid="stCaptionContainer"] { color: #f0bfa4 !important; }
+[data-testid="stWidgetLabel"] p, .stRadio label p { color: #ffd2bb; }
+[data-testid="stExpander"] summary p { color: #ffd2bb; }
+
+/* กรอบกล่องคำถาม (st.container(border=True)) */
+[data-testid="stVerticalBlockBorderWrapper"] { border-color: rgba(255, 110, 60, 0.35) !important; }
+
+/* ช่องกรอกตัวเลข: config.toml ตั้งเป็นสีน้ำเงินเข้ม -> เปลี่ยนเป็นหินลาวาเข้ม */
+[data-testid="stNumberInputContainer"] {
+  background-color: #3a0f0a !important;
+  border-color: #8a3220 !important;
+}
+[data-testid="stNumberInputContainer"]:focus-within { border-color: #ff6a2b !important; }
+[data-testid="stNumberInputContainer"] input { color: #fff1e8; }
+[data-testid="stNumberInputContainer"] button:hover { background-color: #ff6a2b; color: #2a0503; }
+
+/* ปุ่มวงกลม radio: ตัวที่เลือก = ส้มลาวา, ตัวที่ไม่เลือก = หินเข้ม */
+[data-testid="stRadioOption"] > div > div:first-child {
+  background-color: #2a0907 !important; border-color: #8a3220 !important;
+}
+[data-testid="stRadioOption"][data-selected="true"] > div > div:first-child {
+  background-color: #ff6a2b !important; border-color: #ff6a2b !important;
+}
+
+/* ---------- 4) ปุ่ม ---------- */
+.stButton > button:hover { box-shadow: 0 6px 22px rgba(255, 100, 40, 0.45); }
+.stButton > button[kind="primary"] {
+  background: linear-gradient(90deg, #d7261e, #ff6a2b 55%, #ffae42); color: #2a0503;
+}
+.stButton > button[kind="secondary"] {
+  background-color: #2a0907; border-color: #8a3220; color: #ffd2bb;
+}
+.stButton > button[kind="secondary"]:hover { border-color: #ff6a2b; color: #fff1e8; }
+
+/* ตาราง / expander */
+[data-testid="stExpander"] details { border-color: rgba(255, 110, 60, 0.35); }
+[data-testid="stExpander"] summary { background-color: rgba(110, 28, 14, 0.55) !important; }
+[data-testid="stExpander"] summary:hover p { color: #ff8a4c; }
+[data-testid="stElementToolbarButtonContainer"] { background-color: #2a0907 !important; }
+
+/* ตัวหนังสือท้ายเว็บ */
+p.footer { color: #c98a70 !important; }

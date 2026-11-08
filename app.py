@@ -24,10 +24,14 @@ import streamlit as st
 # ============================================================
 # ส่วนที่ 1 : ค่าที่ธนาคารกำหนด
 # ============================================================
-ANNUAL_RATE = 0.02  # ดอกเบี้ย 2% ต่อปี แบบทบต้น (แก้ตรงนี้ที่เดียว ทั้งโปรแกรมเปลี่ยนตาม)
+DEPOSIT_RATE = 0.02  # ดอกเบี้ยเงินฝาก 2% ต่อปี แบบทบต้น (แก้ตรงนี้ที่เดียว ทั้งโปรแกรมเปลี่ยนตาม)
+LOAN_RATE = 0.12     # ดอกเบี้ยเงินกู้ 12% ต่อปี แบบลดต้นลดดอก
 
 FREQ_YEAR = "ทุกปี"
 FREQ_MONTH = "ทุกเดือน"
+
+PAY_MONTH = "ผ่อนรายเดือน"
+PAY_YEAR = "ผ่อนรายปี"
 
 
 # ============================================================
@@ -41,8 +45,8 @@ def rate_and_periods(years, freq):
     ฝากทุกเดือน : r = ดอกเบี้ยต่อปี / 12,   n = 12 x จำนวนปี
     """
     if freq == FREQ_MONTH:
-        return ANNUAL_RATE / 12, years * 12
-    return ANNUAL_RATE, years
+        return DEPOSIT_RATE / 12, years * 12
+    return DEPOSIT_RATE, years
 
 
 def balance(P, r, d, n):
@@ -86,6 +90,40 @@ def need_P(G, d, r, n):
 def need_equal(G, r, n):
     """ให้เงินต้นเท่ากับเงินฝากเพิ่ม (P = d)  ->  ค่านั้นเท่าไหร่"""
     return G / ((1 + r) ** n + deposit_factor(r, n))
+
+
+# --- เงินกู้ แบบลดต้นลดดอก ผ่อนเท่ากันทุกงวด จ่ายปลายงวด ---
+#   L = เงินกู้, i = ดอกเบี้ยต่องวด, X = ค่างวด, N = จำนวนงวด
+#   A_n = หนี้คงเหลือหลังจ่ายงวดที่ n
+def loan_rate_and_periods(years, freq):
+    """ผ่อนรายเดือน : i = LOAN_RATE / 12, N = 12 x จำนวนปี
+    ผ่อนรายปี   : i = LOAN_RATE,      N = จำนวนปี
+    """
+    if freq == PAY_MONTH:
+        return LOAN_RATE / 12, years * 12
+    return LOAN_RATE, years
+
+
+def loan_payment(L, i, N):
+    """สูตรค่างวด (หาด้วยมือจากสมการเวียนเกิด โดยให้ A_N = 0)
+        X = L·i·(1+i)^N / ((1+i)^N - 1)
+    """
+    if i == 0:  # ไม่มีดอกเบี้ย -> แบ่งเงินต้นเท่า ๆ กัน
+        return L / N
+    k = (1 + i) ** N
+    return L * i * k / (k - 1)
+
+
+def loan_by_recurrence(L, i, X, N):
+    """วนสมการเวียนเกิดทีละงวด  A_n = (1+i)A_{n-1} - X,  A_0 = L
+    คืนค่ารายการ (ดอกเบี้ยงวดนี้, ส่วนที่ไปลดเงินต้น, หนี้คงเหลือ) ของงวดที่ 1..N
+    """
+    rows, A = [], L
+    for _ in range(N):
+        interest = i * A          # ดอกเบี้ยคิดจากหนี้ที่ยังเหลือ (ลดต้นลดดอก)
+        A = (1 + i) * A - X       # สมการเวียนเกิด
+        rows.append((interest, X - interest, A))
+    return rows
 
 
 # ============================================================
@@ -187,6 +225,53 @@ def show_table(P, r, d, n, freq):
     st.dataframe(pd.DataFrame(rows), hide_index=True, height=360)
 
 
+def zero_if_tiny(x):
+    """เศษเล็กมากจากการคำนวณทศนิยม (เช่น -0.000000001) ให้แสดงเป็น 0"""
+    return 0.0 if abs(x) < 0.005 else x
+
+
+def loan_chart(df, unit):
+    """กราฟหนี้คงเหลือลดลงทุกงวด (ธีมแมกมา)"""
+    x = alt.X("งวดที่:Q", title=f"งวดที่ ({unit})", axis=alt.Axis(format="d", tickMinStep=1))
+    y = alt.Y("หนี้คงเหลือ:Q", title="บาท", axis=alt.Axis(format=",.0f"))
+
+    lava = alt.Chart(df).mark_area(
+        color=alt.Gradient(gradient="linear", x1=1, x2=1, y1=1, y2=0,
+                           stops=[alt.GradientStop(color="rgba(255,77,46,0.03)", offset=0),
+                                  alt.GradientStop(color="rgba(255,120,40,0.55)", offset=1)])
+    ).encode(x=x, y=y)
+
+    line = alt.Chart(df).mark_line(strokeWidth=2.8, color="#FFB347").encode(
+        x=x, y=y,
+        tooltip=[alt.Tooltip("งวดที่:Q"), alt.Tooltip("หนี้คงเหลือ:Q", format=",.2f")],
+    )
+
+    chart = (alt.layer(lava, line).properties(height=340)
+             .configure(background="transparent")
+             .configure_view(strokeWidth=0)
+             .configure_axis(labelColor="#ffc9a8", titleColor="#ffc9a8",
+                             gridColor="rgba(255,255,255,0.08)", domainColor="#a8402a"))
+    st.altair_chart(chart, theme=None, width="stretch")
+
+
+def show_loan_table(rows, X, freq):
+    """ตารางผ่อนรายงวด: ค่างวด = ดอกเบี้ย + ส่วนลดเงินต้น"""
+    data = []
+    for k, (interest, principal, left) in enumerate(rows, start=1):
+        row = {"งวดที่": k}
+        if freq == PAY_MONTH:
+            row["ปีที่"] = math.ceil(k / 12)
+        row.update({"ค่างวด X": money(X),
+                    "ดอกเบี้ย": money(interest),
+                    "ส่วนลดเงินต้น": money(principal),
+                    "หนี้คงเหลือ A(k)": money(zero_if_tiny(left))})
+        data.append(row)
+    # ตารางวาดบน canvas จึงแต่งด้วย CSS ไม่ได้ -> ใช้ Styler ของ pandas ระบายสีช่องเป็นโทนแมกมา
+    styled = pd.DataFrame(data).style.set_properties(
+        **{"background-color": "#2a0907", "color": "#ffe0cc"})
+    st.dataframe(styled, hide_index=True, height=360)
+
+
 # ============================================================
 # ส่วนที่ 4 : หน้าจอโปรแกรม
 # ============================================================
@@ -197,11 +282,18 @@ css_file = Path(__file__).with_name("style.css")
 if css_file.exists():
     st.markdown(f"<style>{css_file.read_text(encoding='utf-8')}</style>", unsafe_allow_html=True)
 
+# อยู่หน้าเงินกู้ -> โหลดธีมแมกมา (magma.css) ทับธีมมหาสมุทร และเปลี่ยนฟองอากาศเป็นประกายไฟ
+is_loan = st.session_state.get("mode") == "loan"
+magma_file = Path(__file__).with_name("magma.css")
+if is_loan and magma_file.exists():
+    st.markdown(f"<style>{magma_file.read_text(encoding='utf-8')}</style>", unsafe_allow_html=True)
+bubble_class = "bubble ember" if is_loan else "bubble"
+
 BUBBLES = [(4, 10, 14, 0), (11, 18, 19, 3), (19, 8, 12, 6), (27, 14, 17, 1), (36, 6, 11, 8),
            (45, 20, 22, 4), (53, 9, 13, 2), (61, 16, 18, 7), (70, 7, 12, 5), (78, 22, 24, 1),
            (86, 11, 15, 9), (93, 15, 20, 3)]  # (ตำแหน่งซ้าย %, ขนาด px, ระยะเวลา s, หน่วง s)
 st.markdown('<div class="bubbles">' + "".join(
-    f'<span class="bubble" style="left:{l}%;width:{s}px;height:{s}px;'
+    f'<span class="{bubble_class}" style="left:{l}%;width:{s}px;height:{s}px;'
     f'animation-duration:{t}s;animation-delay:{dl}s"></span>' for l, s, t, dl in BUBBLES
 ) + "</div>", unsafe_allow_html=True)
 
@@ -209,7 +301,8 @@ st.markdown('<div class="bubbles">' + "".join(
 st.markdown(
     '<div class="hero"><div class="whale">🐋</div><h1>Deep Ocean Savings</h1>'
     '<p>โปรแกรมคำนวณเงินฝากแบบดอกเบี้ยทบต้น · ฝากเพิ่มต้นงวด · AM200</p>'
-    f'<span class="rate-badge">🏦 ธนาคารกำหนดดอกเบี้ย {ANNUAL_RATE * 100:g}% ต่อปี (ทบต้น)</span></div>',
+    f'<span class="rate-badge">🏦 ดอกเบี้ยเงินฝาก {DEPOSIT_RATE * 100:g}% ต่อปี (ทบต้น)'
+    f' · 💳 ดอกเบี้ยเงินกู้ {LOAN_RATE * 100:g}% ต่อปี</span></div>',
     unsafe_allow_html=True)
 st.write("")
 
@@ -278,7 +371,7 @@ def show_deposit_result(P, years, freq, d):
     st.markdown("#### 📐 สูตรที่ใช้ (หาด้วยมือจากสมการเวียนเกิด)")
     st.latex(r"B_n=(1+r)\,(B_{n-1}+d),\quad B_0=P")
     st.latex(r"B_n=\left(P+\frac{(1+r)d}{r}\right)(1+r)^n-\frac{(1+r)d}{r}")
-    r_text = short(r) if freq == FREQ_YEAR else rf"\frac{{{ANNUAL_RATE:g}}}{{12}}\approx {short(r)}"
+    r_text = short(r) if freq == FREQ_YEAR else rf"\frac{{{DEPOSIT_RATE:g}}}{{12}}\approx {short(r)}"
     if r == 0:
         st.latex(rf"r=0 \;\Rightarrow\; B_{{{n}}}=P+nd={tex(B)}")
     else:
@@ -305,9 +398,9 @@ def show_deposit_result(P, years, freq, d):
 
 
 # ---------------- หน้า "ตั้งเป้าหมาย" ----------------
-GOAL_FIND_D = "ฉันมีเงินต้นแล้ว → ต้องฝากเพิ่มงวดละเท่าไหร่ (หา d)"
-GOAL_FIND_P = "ฉันรู้ว่าฝากเพิ่มได้งวดละเท่าไหร่ → ต้องมีเงินต้นเท่าไหร่ (หา P)"
-GOAL_EQUAL = "เงินต้นเท่ากับเงินฝากเพิ่ม (P = d) แบบตัวอย่างอาจารย์ → งวดละเท่าไหร่"
+GOAL_FIND_D = "ฉันมีเงินต้นแล้ว → จะต้องฝากเพิ่มงวดละเท่าไหร่ (หา d)"
+GOAL_FIND_P = "ฉันรู้ว่าฝากเพิ่มได้งวดละเท่าไหร่ → จะต้องมีเงินต้นเท่าไหร่ (หา P)"
+GOAL_EQUAL = "เงินต้นเท่ากับเงินฝากเพิ่ม (P = d) → จะต้องเพิ่มงวดละเท่าไหร่"
 
 
 def goal_page():
@@ -351,7 +444,7 @@ def show_goal_result(G, years, freq, find, known):
     kn, F = (1 + r) ** n, deposit_factor(r, n)
 
     st.markdown("### 🐚 คำตอบ")
-    st.caption(f"เป้าหมาย {money(G)} บาท ภายใน {years} ปี (n = {n} งวด) · ดอกเบี้ย {ANNUAL_RATE * 100:g}% ต่อปี")
+    st.caption(f"เป้าหมาย {money(G)} บาท ภายใน {years} ปี (n = {n} งวด) · ดอกเบี้ย {DEPOSIT_RATE * 100:g}% ต่อปี")
 
     # 1) ใช้สูตรที่ย้ายข้างแล้วหาคำตอบ
     if find == GOAL_FIND_D:
@@ -397,15 +490,80 @@ def show_goal_result(G, years, freq, find, known):
         show_table(P, r, d, n, freq)
 
 
-# ---------------- หน้า "เงินกู้" (ยังไม่เปิดใช้) ----------------
+# ---------------- หน้า "เงินกู้" (ลดต้นลดดอก ผ่อนเท่ากันทุกงวด จ่ายปลายงวด) ----------------
 def loan_page():
-    st.markdown(
-        '<div class="ocean-card" style="text-align:center;padding:42px 20px;margin-top:10px">'
-        '<div style="font-size:3rem">🛠️🐙</div>'
-        '<div class="value" style="font-size:1.5rem">เงินกู้ — กำลังพัฒนา</div>'
-        '<div class="sub" style="font-size:1rem;margin-top:8px">'
-        'เร็ว ๆ นี้: คำนวณค่างวดผ่อนต่อเดือน/ต่อปี แบบลดต้นลดดอก</div></div>',
-        unsafe_allow_html=True)
+    with st.container(border=True):
+        st.markdown('<div class="step-title">🌋 โปรแกรมขอถาม 3 ข้อ</div>', unsafe_allow_html=True)
+        col1, col2 = st.columns(2)
+        with col1:
+            L = st.number_input("① ต้องการกู้เงิน L เท่าไหร่ (บาท)", min_value=1.0,
+                                value=4000000.0, step=100000.0, format="%.2f", key="loan_L")
+            years = st.number_input("② ผ่อนกี่ปี", min_value=1, max_value=100,
+                                    value=30, step=1, key="loan_years")
+        with col2:
+            freq = st.radio("③ จะผ่อนรายเดือนหรือรายปี", [PAY_MONTH, PAY_YEAR],
+                            horizontal=True, key="loan_freq")
+        if st.button("🔥  คำนวณค่างวด", type="primary", width="stretch", key="loan_go"):
+            st.session_state.loan_result = dict(L=L, years=int(years), freq=freq)
+
+    res = st.session_state.get("loan_result")
+    if res is None:
+        note("กรอกข้อมูลแล้วกด <b>คำนวณค่างวด</b> ได้เลย 🌋")
+        return
+    if res != dict(L=L, years=int(years), freq=freq):
+        note("✏️ ข้อมูลเปลี่ยนแล้ว กด <b>คำนวณค่างวด</b> อีกครั้งเพื่อดูคำตอบใหม่ (ด้านล่างคือคำตอบของคำถามล่าสุด)")
+    show_loan_result(**res)
+
+
+def show_loan_result(L, years, freq):
+    i, N = loan_rate_and_periods(years, freq)
+    unit = "เดือน" if freq == PAY_MONTH else "ปี"
+    per = "เดือนละ" if freq == PAY_MONTH else "ปีละ"
+
+    X = loan_payment(L, i, N)        # <-- ใช้สูตรที่หาด้วยมือคำนวณค่างวด
+    total = N * X
+    interest = total - L
+
+    st.markdown("### 🔥 คำตอบ")
+    st.caption(f"คำถาม: กู้ {money(L)} บาท · ผ่อน {years} ปี · {freq} · "
+               f"ดอกเบี้ยเงินกู้ {LOAN_RATE * 100:g}% ต่อปี")
+    show_cards(
+        card(f"ค่างวดที่ต้องผ่อน{per} (X)", f"{money(X)} บาท", f"N = {N} งวด ({unit}) · จ่ายปลายงวด", "main"),
+        card("ยอดจ่ายรวมทั้งหมด", f"{money(total)} บาท", f"N·X = {N}×{money(X)}"),
+        card("ดอกเบี้ยที่ต้องจ่ายรวม", f"{money(interest)} บาท", "N·X − L", "gold"),
+    )
+
+    # สูตรและการแทนค่า
+    st.markdown("#### 📐 สูตรที่ใช้ (หาด้วยมือจากสมการเวียนเกิด)")
+    st.latex(r"A_n=(1+i)\,A_{n-1}-X,\quad A_0=L")
+    st.latex(r"A_N=0\;\Rightarrow\;X=\frac{L\,i\,(1+i)^N}{(1+i)^N-1}")
+    if i == 0:
+        st.latex(rf"i=0 \;\Rightarrow\; X=\frac{{L}}{{N}}=\frac{{{tex(L)}}}{{{N}}}={tex(X)}")
+    else:
+        k = (1 + i) ** N
+        i_text = short(i) if freq == PAY_YEAR else rf"\frac{{{LOAN_RATE:g}}}{{12}}={short(i)}"
+        st.latex(
+            r"\begin{aligned}"
+            rf"i&={i_text},\qquad N={N}\\"
+            rf"(1+i)^N&=({short(1 + i)})^{{{N}}}\approx {k:.6f}\\"
+            rf"X&=\frac{{({tex(L)})({short(i)})({k:.6f})}}{{{k:.6f}-1}}\\"
+            rf"&={tex(X)}"
+            r"\end{aligned}")
+        st.caption("ตัวเลขระหว่างทางแสดงแบบปัดเศษ แต่โปรแกรมคำนวณด้วยค่าเต็มทุกตำแหน่ง")
+
+    rows = loan_by_recurrence(L, i, X, N)
+    left = rows[-1][2]
+    if abs(left) < 0.005:
+        note(f"✅ ตรวจด้วยสมการเวียนเกิดทีละงวด {N} รอบ หนี้เหลือ {money(zero_if_tiny(left))} บาท "
+             f"<b>ผ่อนหมดพอดี</b>", "ok")
+
+    st.markdown("#### 📉 หนี้คงเหลือลดลงทุกงวด")
+    df = pd.DataFrame({"งวดที่": range(N + 1),
+                       "หนี้คงเหลือ": [L] + [zero_if_tiny(r[2]) for r in rows]})
+    loan_chart(df, unit)
+
+    with st.expander("📋 ตารางผ่อนรายงวด"):
+        show_loan_table(rows, X, freq)
 
 
 # 4.4 แสดงหน้าตามปุ่มที่เลือก
@@ -419,6 +577,6 @@ if st.session_state.mode == "deposit":
 else:
     loan_page()
 
-st.markdown('<p style="text-align:center;color:#5f8fa8;margin-top:2.5rem">'
-            'AM200 · Recurrence Relation · ทุกคำตอบคำนวณจากสูตรทั่วไปที่หาด้วยมือ 🐋</p>',
+st.markdown('<p class="footer" style="text-align:center;color:#5f8fa8;margin-top:2.5rem">'
+            'AM200 · Recurrence Relation · 🐋</p>',
             unsafe_allow_html=True)
