@@ -126,6 +126,57 @@ def loan_by_recurrence(L, i, X, N):
     return rows
 
 
+# --- สูตรสำหรับ "ตั้งเป้าหมาย" ฝั่งเงินกู้ : ย้ายข้างจากเงื่อนไข A_N = 0 ---
+def loan_left(L, i, X, n):
+    """สูตรทั่วไป: หนี้คงเหลือหลังจ่ายงวดที่ n
+        A_n = (1+i)^n L - X((1+i)^n - 1)/i
+    """
+    if i == 0:
+        return L - n * X
+    k = (1 + i) ** n
+    return k * L - X * (k - 1) / i
+
+
+def loan_max(X, i, N):
+    """ผ่อนได้งวดละ X  ->  กู้ได้สูงสุดเท่าไหร่
+        L = X(1 - (1+i)^(-N)) / i
+    """
+    if i == 0:  # ไม่มีดอกเบี้ย -> L = X·N
+        return X * N
+    return X * (1 - (1 + i) ** (-N)) / i
+
+
+def loan_periods(L, i, X):
+    """กู้ L ผ่อนงวดละ X  ->  จำนวนงวด N* (ยังไม่ปัด)
+        (1+i)^N = X / (X - L·i)   =>   N* = ln(X / (X - L·i)) / ln(1+i)
+    ใช้ได้เมื่อ X > L·i เท่านั้น (ถ้าไม่ใช่ จ่ายแค่ดอกเบี้ย หนี้ไม่ลดเลย)
+    """
+    if i == 0:
+        return L / X
+    return math.log(X / (X - L * i)) / math.log(1 + i)
+
+
+def whole_periods(N_star):
+    """จำนวนงวดจริง = ปัดขึ้นของ N*  (ถ้า N* เป็นจำนวนเต็มอยู่แล้ว ไม่ต้องปัด)"""
+    nearest = round(N_star)
+    if abs(N_star - nearest) < 1e-9:  # กันเศษทศนิยมเล็ก ๆ เช่น 359.9999999999
+        return max(int(nearest), 1)
+    return max(math.ceil(N_star), 1)
+
+
+def loan_payoff(L, i, X, N):
+    """ใช้ "ตรวจคำตอบ": วนสมการเวียนเกิด A_n = (1+i)A_{n-1} - X ทีละงวด
+    โดยงวดสุดท้าย (งวดที่ N) จ่ายแค่ที่เหลือ = (1+i)·A_{N-1}
+    คืนค่า (รายการแต่ละงวดแบบเดียวกับ loan_by_recurrence, ค่างวดสุดท้าย)
+    """
+    rows = loan_by_recurrence(L, i, X, N - 1)
+    A = rows[-1][2] if rows else L
+    interest = i * A
+    last = (1 + i) * A
+    rows.append((interest, last - interest, (1 + i) * A - last))
+    return rows, last
+
+
 # ============================================================
 # ส่วนที่ 3 : เครื่องมือช่วยแสดงผล
 # ============================================================
@@ -147,6 +198,20 @@ def short(x):
 def round_up(x):
     """ปัดขึ้นเป็นสตางค์ เพื่อให้ถึงเป้าแน่นอน"""
     return math.ceil(x * 100 - 1e-9) / 100
+
+
+def round_down(x):
+    """ปัดลงเป็นสตางค์ (ใช้กับ "วงเงินกู้สูงสุด" เพื่อไม่ให้เกินที่ผ่อนไหว)"""
+    return math.floor(x * 100 + 1e-9) / 100
+
+
+def years_months(N, freq):
+    """จำนวนงวด -> ข้อความ เช่น 162 งวดรายเดือน -> '13 ปี 6 เดือน'"""
+    if freq == PAY_YEAR:
+        return f"{N} ปี"
+    y, m = divmod(N, 12)
+    parts = ([f"{y} ปี"] if y else []) + ([f"{m} เดือน"] if m else [])
+    return " ".join(parts)
 
 
 def card(label, value, sub="", kind=""):
@@ -254,14 +319,40 @@ def loan_chart(df, unit):
     st.altair_chart(chart, theme=None, width="stretch")
 
 
-def show_loan_table(rows, X, freq):
-    """ตารางผ่อนรายงวด: ค่างวด = ดอกเบี้ย + ส่วนลดเงินต้น"""
+def loan_compare_chart(df, unit):
+    """กราฟหนี้คงเหลือ 2 เส้น: ผ่อนตามปกติ vs โปะเพิ่ม (ธีมแมกมา)"""
+    series = list(df["รายการ"].unique())
+    x = alt.X("งวดที่:Q", title=f"งวดที่ ({unit})", axis=alt.Axis(format="d", tickMinStep=1))
+    lines = alt.Chart(df).mark_line(strokeWidth=2.8).encode(
+        x=x,
+        y=alt.Y("หนี้คงเหลือ:Q", title="บาท", axis=alt.Axis(format=",.0f")),
+        color=alt.Color("รายการ:N", scale=alt.Scale(domain=series, range=["#FFB347", "#FF4D2E"]),
+                        legend=alt.Legend(title=None, orient="top")),
+        strokeDash=alt.StrokeDash("รายการ:N", scale=alt.Scale(domain=series, range=[[6, 4], [1, 0]]),
+                                  legend=None),
+        tooltip=[alt.Tooltip("งวดที่:Q"), alt.Tooltip("รายการ:N"),
+                 alt.Tooltip("หนี้คงเหลือ:Q", format=",.2f")],
+    )
+    chart = (lines.properties(height=340)
+             .configure(background="transparent")
+             .configure_view(strokeWidth=0)
+             .configure_axis(labelColor="#ffc9a8", titleColor="#ffc9a8",
+                             gridColor="rgba(255,255,255,0.08)", domainColor="#a8402a")
+             .configure_legend(labelColor="#ffe0cc", labelFontSize=13))
+    st.altair_chart(chart, theme=None, width="stretch")
+
+
+def show_loan_table(rows, X, freq, last=None):
+    """ตารางผ่อนรายงวด: ค่างวด = ดอกเบี้ย + ส่วนลดเงินต้น
+    last = ค่างวดสุดท้าย (ถ้างวดสุดท้ายจ่ายน้อยกว่า X) ไม่ใส่ = ทุกงวดจ่าย X เท่ากัน
+    """
     data = []
     for k, (interest, principal, left) in enumerate(rows, start=1):
         row = {"งวดที่": k}
         if freq == PAY_MONTH:
             row["ปีที่"] = math.ceil(k / 12)
-        row.update({"ค่างวด X": money(X),
+        pay = last if (last is not None and k == len(rows)) else X
+        row.update({"ค่างวด X": money(pay),
                     "ดอกเบี้ย": money(interest),
                     "ส่วนลดเงินต้น": money(principal),
                     "หนี้คงเหลือ A(k)": money(zero_if_tiny(left))})
@@ -566,6 +657,263 @@ def show_loan_result(L, years, freq):
         show_loan_table(rows, X, freq)
 
 
+# ---------------- หน้า "ตั้งเป้าหมาย" ฝั่งเงินกู้ ----------------
+LGOAL_FIND_L = "ผ่อนได้งวดละ X → กู้ได้สูงสุดเท่าไหร่ (หา L)"
+LGOAL_FIND_N = "กู้ L ผ่อนได้งวดละ X → ต้องผ่อนกี่งวดถึงหมด (หา N)"
+LGOAL_EXTRA = "โปะเพิ่มงวดละ E → หมดเร็วขึ้นกี่งวด ประหยัดดอกเบี้ยเท่าไหร่"
+MAX_PERIODS = 6000  # กันกรณีจำนวนงวดมหาศาล (ตาราง/กราฟจะช้ามาก)
+
+
+def loan_goal_page():
+    with st.container(border=True):
+        st.markdown('<div class="step-title">🎯 บอกสิ่งที่รู้ ให้โปรแกรมหาส่วนที่เหลือ</div>',
+                    unsafe_allow_html=True)
+        col1, col2 = st.columns(2)
+        with col1:
+            find = st.radio("อยากให้โปรแกรมหาอะไร", [LGOAL_FIND_L, LGOAL_FIND_N, LGOAL_EXTRA], key="lg_find")
+            freq = st.radio("จะผ่อนรายเดือนหรือรายปี", [PAY_MONTH, PAY_YEAR], horizontal=True, key="lg_freq")
+        with col2:
+            per = "เดือนละ" if freq == PAY_MONTH else "ปีละ"
+            if find == LGOAL_FIND_L:
+                values = dict(
+                    X=st.number_input(f"ผ่อนได้{per} X (บาท)", min_value=1.0, value=20000.0,
+                                      step=1000.0, format="%.2f", key="lg1_X"),
+                    years=int(st.number_input("ผ่อนกี่ปี", min_value=1, max_value=100,
+                                              value=30, step=1, key="lg1_years")))
+            elif find == LGOAL_FIND_N:
+                values = dict(
+                    L=st.number_input("กู้เงิน L (บาท)", min_value=1.0, value=4000000.0,
+                                      step=100000.0, format="%.2f", key="lg2_L"),
+                    X=st.number_input(f"ผ่อนได้{per} X (บาท)", min_value=1.0, value=50000.0,
+                                      step=1000.0, format="%.2f", key="lg2_X"))
+            else:
+                values = dict(
+                    L=st.number_input("กู้เงิน L (บาท)", min_value=1.0, value=4000000.0,
+                                      step=100000.0, format="%.2f", key="lg3_L"),
+                    years=int(st.number_input("สัญญาผ่อนกี่ปี", min_value=1, max_value=100,
+                                              value=30, step=1, key="lg3_years")),
+                    E=st.number_input(f"โปะเพิ่ม{per} E (บาท)", min_value=0.0, value=10000.0,
+                                      step=1000.0, format="%.2f", key="lg3_E"))
+        if st.button("🎯  หาคำตอบ", type="primary", width="stretch", key="lg_go"):
+            st.session_state.loan_goal_result = dict(find=find, freq=freq, **values)
+
+    res = st.session_state.get("loan_goal_result")
+    if res is None:
+        note("เลือกสิ่งที่อยากรู้ กรอกข้อมูล แล้วกด <b>หาคำตอบ</b> ได้เลย 🌋")
+        return
+    if res != dict(find=find, freq=freq, **values):
+        note("✏️ ข้อมูลเปลี่ยนแล้ว กด <b>หาคำตอบ</b> อีกครั้งเพื่อดูคำตอบใหม่ (ด้านล่างคือคำตอบของคำถามล่าสุด)")
+    show_loan_goal_result(**res)
+
+
+def loan_i_latex(i, freq):
+    """ข้อความ i สำหรับใส่ในสูตร เช่น  0.12/12 = 0.01"""
+    return short(i) if freq == PAY_YEAR else rf"\frac{{{LOAN_RATE:g}}}{{12}}={short(i)}"
+
+
+def show_loan_goal_result(find, freq, **v):
+    st.markdown("### 🔥 คำตอบ")
+    if find == LGOAL_FIND_L:
+        show_find_L(v["X"], v["years"], freq)
+    elif find == LGOAL_FIND_N:
+        show_find_N(v["L"], v["X"], freq)
+    else:
+        show_extra(v["L"], v["years"], v["E"], freq)
+
+
+# แบบที่ 1 : หา L
+def show_find_L(X, years, freq):
+    i, N = loan_rate_and_periods(years, freq)
+    unit = "เดือน" if freq == PAY_MONTH else "ปี"
+    per = "เดือนละ" if freq == PAY_MONTH else "ปีละ"
+
+    L_raw = loan_max(X, i, N)        # <-- สูตรที่ย้ายข้างจาก A_N = 0
+    L = round_down(L_raw)
+    total = N * X
+
+    st.caption(f"คำถาม: ผ่อนได้{per} {money(X)} บาท · {years} ปี · {freq} · "
+               f"ดอกเบี้ยเงินกู้ {LOAN_RATE * 100:g}% ต่อปี")
+    show_cards(
+        card("กู้ได้สูงสุด (L)", f"{money(L)} บาท", "ปัดลงเป็นสตางค์ ไม่ให้เกินที่ผ่อนไหว", "main"),
+        card("ยอดจ่ายรวมทั้งหมด", f"{money(total)} บาท", f"N·X = {N}×{money(X)}"),
+        card("ดอกเบี้ยที่ต้องจ่ายรวม", f"{money(total - L)} บาท", "N·X − L", "gold"),
+    )
+
+    st.markdown("#### 📐 สูตร (ย้ายข้างจากสูตรทั่วไป โดยให้ A<sub>N</sub> = 0)", unsafe_allow_html=True)
+    st.latex(r"A_N=(1+i)^N L-X\,\frac{(1+i)^N-1}{i}=0")
+    st.latex(r"\Rightarrow\;L=\frac{X\left(1-(1+i)^{-N}\right)}{i}")
+    if i == 0:
+        st.latex(rf"i=0 \;\Rightarrow\; L=XN=({tex(X)})({N})={tex(L_raw)}")
+    else:
+        v = (1 + i) ** (-N)
+        st.latex(
+            r"\begin{aligned}"
+            rf"i&={loan_i_latex(i, freq)},\qquad N={N}\\"
+            rf"(1+i)^{{-N}}&=({short(1 + i)})^{{-{N}}}\approx {v:.6f}\\"
+            rf"L&=\frac{{({tex(X)})(1-{v:.6f})}}{{{short(i)}}}\\"
+            rf"&\approx {tex(L_raw)}"
+            r"\end{aligned}")
+        st.caption("ตัวเลขระหว่างทางแสดงแบบปัดเศษ แต่โปรแกรมคำนวณด้วยค่าเต็มทุกตำแหน่ง")
+
+    # ตรวจ: กู้ L (ค่าเต็ม) แล้วผ่อนงวดละ X ครบ N งวด หนี้ต้องเหลือ 0
+    rows = loan_by_recurrence(L_raw, i, X, N)
+    left = rows[-1][2]
+    if abs(left) < 0.005:
+        note(f"✅ ตรวจด้วยสมการเวียนเกิด: กู้ {money(L_raw)} บาท ผ่อน{per} {money(X)} บาท ครบ {N} รอบ "
+             f"หนี้เหลือ {money(zero_if_tiny(left))} บาท <b>ผ่อนหมดพอดี</b>", "ok")
+
+    st.markdown("#### 📉 หนี้คงเหลือลดลงทุกงวด")
+    df = pd.DataFrame({"งวดที่": range(N + 1),
+                       "หนี้คงเหลือ": [L_raw] + [zero_if_tiny(r[2]) for r in rows]})
+    loan_chart(df, unit)
+    with st.expander("📋 ตารางผ่อนรายงวด"):
+        show_loan_table(rows, X, freq)
+
+
+def periods_latex(L, i, X, N_star, N, A_prev, last, freq):
+    """แสดงการแทนค่าในสูตรหาจำนวนงวด (ใช้ทั้งแบบที่ 2 และ 3)"""
+    st.latex(r"A_N=(1+i)^N L-X\,\frac{(1+i)^N-1}{i}=0")
+    st.latex(r"\Rightarrow\;(1+i)^N=\frac{X}{X-L\,i}")
+    st.latex(r"\Rightarrow\;N^{*}=\frac{\ln\left(\dfrac{X}{X-L\,i}\right)}{\ln(1+i)}")
+    if i == 0:
+        st.latex(rf"i=0 \;\Rightarrow\; N^{{*}}=\frac{{L}}{{X}}=\frac{{{tex(L)}}}{{{tex(X)}}}"
+                 rf"\approx {N_star:.4f}")
+    else:
+        st.latex(
+            r"\begin{aligned}"
+            rf"i&={loan_i_latex(i, freq)}\\"
+            rf"L\,i&=({tex(L)})({short(i)})={tex(L * i)}\\"
+            rf"N^{{*}}&=\frac{{\ln\left(\dfrac{{{tex(X)}}}{{{tex(X)}-{tex(L * i)}}}\right)}}"
+            rf"{{\ln({short(1 + i)})}}\\"
+            rf"&\approx {N_star:.4f}"
+            r"\end{aligned}")
+    st.latex(rf"N=\lceil N^{{*}}\rceil={N}")
+    st.latex(
+        r"\begin{aligned}"
+        rf"A_{{{N - 1}}}&\approx {tex(A_prev)}\\"
+        rf"X_{{\text{{last}}}}&=(1+i)\,A_{{{N - 1}}}\\"
+        rf"&\approx {tex(last)}"
+        r"\end{aligned}")
+    st.caption("A_(N−1) หาจากสูตรทั่วไป A_n = (1+i)ⁿL − X((1+i)ⁿ − 1)/i  · "
+               "ตัวเลขระหว่างทางแสดงแบบปัดเศษ แต่โปรแกรมคำนวณด้วยค่าเต็มทุกตำแหน่ง")
+
+
+def payoff_numbers(L, i, X):
+    """คำตอบแบบที่ 2 จากสูตรปิด -> (N*, N, A_(N-1), งวดสุดท้าย, ยอดจ่ายรวม)"""
+    N_star = loan_periods(L, i, X)
+    N = whole_periods(N_star)
+    A_prev = loan_left(L, i, X, N - 1)
+    last = (1 + i) * A_prev
+    return N_star, N, A_prev, last, (N - 1) * X + last
+
+
+def check_payoff(L, i, X, N, last, per):
+    """แถบ ✅ : วนสมการเวียนเกิดทีละงวด (งวดสุดท้ายจ่ายแค่ที่เหลือ) แล้วดูว่าหนี้เหลือ 0"""
+    rows, last_check = loan_payoff(L, i, X, N)
+    left = rows[-1][2]
+    if abs(left) < 0.005 and abs(last_check - last) < 0.005 and last <= X + 0.005:
+        note(f"✅ ตรวจด้วยสมการเวียนเกิด: ผ่อน{per} {money(X)} บาท {N - 1} งวด "
+             f"แล้วงวดที่ {N} จ่าย {money(last)} บาท หนี้เหลือ {money(zero_if_tiny(left))} บาท "
+             f"<b>ผ่อนหมดพอดี</b>", "ok")
+    return rows
+
+
+# แบบที่ 2 : หา N
+def show_find_N(L, X, freq):
+    i, _ = loan_rate_and_periods(1, freq)
+    unit = "เดือน" if freq == PAY_MONTH else "ปี"
+    per = "เดือนละ" if freq == PAY_MONTH else "ปีละ"
+    st.caption(f"คำถาม: กู้ {money(L)} บาท · ผ่อนได้{per} {money(X)} บาท · {freq} · "
+               f"ดอกเบี้ยเงินกู้ {LOAN_RATE * 100:g}% ต่อปี")
+
+    if X <= L * i:  # ค่างวดไม่พอแม้แต่ดอกเบี้ย -> หนี้ไม่ลดลงเลย
+        note(f"⛔ ผ่อน{per} {money(X)} บาท <b>ไม่มีวันหมด</b> เพราะดอกเบี้ยงวดแรกก็ "
+             f"L·i = {money(L * i)} บาทแล้ว (จ่ายไปก็โดนแค่ดอกเบี้ย หนี้ไม่ลด) "
+             f"ค่างวดต้อง<b>มากกว่า {money(L * i)} บาท</b>", "warn")
+        return
+
+    N_star, N, A_prev, last, total = payoff_numbers(L, i, X)
+    show_cards(
+        card("ต้องผ่อนทั้งหมด", f"{N} งวด", years_months(N, freq), "main"),
+        card("งวดสุดท้ายจ่าย", f"{money(last)} บาท", f"งวดที่ {N} · งวดอื่นจ่าย {money(X)} บาท"),
+        card("ยอดจ่ายรวมทั้งหมด", f"{money(total)} บาท", f"({N}−1)×{money(X)} + งวดสุดท้าย"),
+        card("ดอกเบี้ยที่ต้องจ่ายรวม", f"{money(total - L)} บาท", "ยอดจ่ายรวม − L", "gold"),
+    )
+
+    st.markdown("#### 📐 สูตร (ย้ายข้างจากสูตรทั่วไป โดยให้ A<sub>N</sub> = 0)", unsafe_allow_html=True)
+    periods_latex(L, i, X, N_star, N, A_prev, last, freq)
+
+    if N > MAX_PERIODS:
+        note(f"จำนวนงวดเยอะมาก ({N:,} งวด) จึงไม่แสดงกราฟและตาราง")
+        return
+    rows = check_payoff(L, i, X, N, last, per)
+
+    st.markdown("#### 📉 หนี้คงเหลือลดลงทุกงวด")
+    df = pd.DataFrame({"งวดที่": range(N + 1),
+                       "หนี้คงเหลือ": [L] + [zero_if_tiny(r[2]) for r in rows]})
+    loan_chart(df, unit)
+    with st.expander("📋 ตารางผ่อนรายงวด"):
+        show_loan_table(rows, X, freq, last=last)
+
+
+# แบบที่ 3 : โปะเพิ่มงวดละ E
+def show_extra(L, years, E, freq):
+    i, N0 = loan_rate_and_periods(years, freq)
+    unit = "เดือน" if freq == PAY_MONTH else "ปี"
+    per = "เดือนละ" if freq == PAY_MONTH else "ปีละ"
+
+    X = loan_payment(L, i, N0)       # ค่างวดเดิม (สูตรหลัก) ใช้ค่าเต็ม ไม่ปัด
+    old_interest = N0 * X - L
+    X_new = X + E
+    N_star, N, A_prev, last, total = payoff_numbers(L, i, X_new)
+    new_interest = total - L
+    saved = old_interest - new_interest
+
+    st.caption(f"คำถาม: กู้ {money(L)} บาท · สัญญา {years} ปี · {freq} · โปะเพิ่ม{per} {money(E)} บาท · "
+               f"ดอกเบี้ยเงินกู้ {LOAN_RATE * 100:g}% ต่อปี")
+    show_cards(
+        card("หมดหนี้ใน", f"{N} งวด", f"{years_months(N, freq)} (เดิม {N0} งวด)", "main"),
+        card("เร็วขึ้น", f"{N0 - N} งวด", years_months(N0 - N, freq) or "เท่าเดิม"),
+        card("ประหยัดดอกเบี้ย", f"{money(saved)} บาท", "ดอกเบี้ยเดิม − ดอกเบี้ยใหม่", "gold"),
+    )
+    show_cards(
+        card("ค่างวดเดิม → ใหม่", f"{money(X_new)} บาท", f"เดิม {money(X)} + โปะ {money(E)}"),
+        card("งวดสุดท้ายจ่าย", f"{money(last)} บาท", f"งวดที่ {N}"),
+        card("ดอกเบี้ยรวม เดิม → ใหม่", f"{money(new_interest)} บาท", f"เดิม {money(old_interest)} บาท"),
+    )
+
+    st.markdown("#### 📐 สูตร", unsafe_allow_html=True)
+    st.markdown("**ขั้นที่ 1** หาค่างวดเดิม X จากสูตรหลัก")
+    st.latex(r"X=\frac{L\,i\,(1+i)^N}{(1+i)^N-1}")
+    st.latex(rf"X\approx {tex(X)},\qquad X'=X+E={tex(X)}+{tex(E)}={tex(X_new)}")
+    st.markdown("**ขั้นที่ 2** ใช้สูตรหาจำนวนงวด (แบบที่ 2) โดยแทน X ด้วยค่างวดใหม่ X′")
+    periods_latex(L, i, X_new, N_star, N, A_prev, last, freq)
+    st.markdown("**ขั้นที่ 3** เทียบดอกเบี้ยรวม")
+    st.latex(
+        r"\begin{aligned}"
+        rf"\text{{old}}&=N_0X-L={N0}({tex(X)})-{tex(L)}\\"
+        rf"&\approx {tex(old_interest)}\\"
+        rf"\text{{new}}&=(N-1)X'+X_{{\text{{last}}}}-L\\"
+        rf"&\approx {tex(new_interest)}\\"
+        rf"\text{{saved}}&\approx {tex(saved)}"
+        r"\end{aligned}")
+
+    rows = check_payoff(L, i, X_new, N, last, per)
+
+    st.markdown("#### 📉 หนี้คงเหลือ: ผ่อนตามปกติ vs โปะเพิ่ม")
+    old_rows = loan_by_recurrence(L, i, X, N0)
+    old_name, new_name = f"ผ่อนตามปกติ ({N0} งวด)", f"โปะเพิ่ม ({N} งวด)"
+    df = pd.concat([
+        pd.DataFrame({"งวดที่": range(N0 + 1), "รายการ": old_name,
+                      "หนี้คงเหลือ": [L] + [zero_if_tiny(r[2]) for r in old_rows]}),
+        pd.DataFrame({"งวดที่": range(N + 1), "รายการ": new_name,
+                      "หนี้คงเหลือ": [L] + [zero_if_tiny(r[2]) for r in rows]}),
+    ])
+    loan_compare_chart(df, unit)
+    with st.expander("📋 ตารางผ่อนรายงวด (แบบโปะเพิ่ม)"):
+        show_loan_table(rows, X_new, freq, last=last)
+
+
 # 4.4 แสดงหน้าตามปุ่มที่เลือก
 st.write("")
 if st.session_state.mode == "deposit":
@@ -575,7 +923,11 @@ if st.session_state.mode == "deposit":
     with tab_goal:
         goal_page()
 else:
-    loan_page()
+    tab_pay, tab_lgoal = st.tabs(["🔥  คำนวณค่างวด", "🎯  ตั้งเป้าหมาย"])
+    with tab_pay:
+        loan_page()
+    with tab_lgoal:
+        loan_goal_page()
 
 st.markdown('<p class="footer" style="text-align:center;color:#5f8fa8;margin-top:2.5rem">'
             'AM200 · Recurrence Relation · 🐋</p>',

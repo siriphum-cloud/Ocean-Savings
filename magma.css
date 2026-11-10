@@ -85,3 +85,12 @@
 
 /* ตัวหนังสือท้ายเว็บ */
 p.footer { color: #c98a70 !important; }
+
+/* ---------- แท็บ (คำนวณค่างวด / ตั้งเป้าหมาย) : เปลี่ยนจากสีเทอร์ควอยซ์เป็นสีลาวา ---------- */
+.stTabs [data-testid="stTab"] p { color: #ffc9a8; }
+.stTabs [data-testid="stTab"][aria-selected="true"] p { color: #ff8a4c; }
+.stTabs .react-aria-SelectionIndicator { background-color: #ff6a2b !important; }   /* ขีดใต้แท็บที่เลือก */
+.stTabs [role="tablist"]::after { background-color: rgba(255, 110, 60, 0.30) !important; }  /* เส้นยาวใต้แท็บ */
+
+/* กล่องเตือนสีแดง (เช่น ผ่อนไม่มีวันหมด) */
+.note.warn { border-left-color: #ff3b2e; background: rgba(255, 59, 46, 0.18); color: #ffe2d4; }
